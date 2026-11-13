@@ -1,0 +1,6 @@
+name: board
+icon: 📷
+description: Posts camera frames to the server while someone is watching.
+
+ports: []
+bricks: []
