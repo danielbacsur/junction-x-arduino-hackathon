@@ -1,8 +1,17 @@
 import { after } from "next/server";
 
 import { decide } from "@/lib/decide";
-import { BLIND_INTERVAL, type Device, FRAME_INTERVAL, WAIT, asked, authorized, settle, view } from "@/lib/device";
-import type { Question } from "@/lib/questions";
+import {
+  BLIND_INTERVAL,
+  type Device,
+  FRAME_INTERVAL,
+  type Rule,
+  WAIT,
+  authorized,
+  pending,
+  settle,
+  view,
+} from "@/lib/device";
 import { realtime } from "@/lib/realtime";
 import { redis } from "@/lib/redis";
 
@@ -12,13 +21,13 @@ const LIMIT = 1_000_000;
 // A watched board sends four frames a second, while what to ask it changes
 // far less often, so an instance looks that up once a second for each board.
 const MEMORY = 1000;
-const watched = new Map<string, { until: number; questions: Record<string, Question> }>();
+const watched = new Map<string, { until: number; rules: Rule[] }>();
 
 // Tells whether anyone has the board's page open, and if so what to ask.
 async function lookup(id: string, now: number) {
   const remembered = watched.get(id);
 
-  if (remembered && remembered.until > now) return remembered.questions;
+  if (remembered && remembered.until > now) return remembered.rules;
 
   const [watching, device] = await redis
     .pipeline()
@@ -34,23 +43,26 @@ async function lookup(id: string, now: number) {
     return null;
   }
 
-  const questions = asked(device);
+  const rules = pending(device);
 
-  watched.set(id, { until: now + MEMORY, questions });
+  watched.set(id, { until: now + MEMORY, rules });
 
-  return questions;
+  return rules;
 }
 
-async function analyse(id: string, frame: Buffer, at: number, questions: Record<string, Question>) {
+async function analyse(id: string, frame: Buffer, at: number, rules: Rule[]) {
   try {
-    let probabilities: Record<string, number>;
+    let probabilities: Record<string, number> = {};
 
     try {
-      probabilities = await decide(frame, questions, DEADLINE);
+      if (rules.length > 0) probabilities = await decide(frame, rules, DEADLINE);
     } catch (error) {
       console.error("decide failed", id, error);
+    }
 
-      // The board did reach us, so it stays online while its answers go stale.
+    // The board did reach us, so with nothing answered it stays online while
+    // its answers go stale.
+    if (Object.keys(probabilities).length === 0) {
       await redis.hset(`device:${id}`, { seen: at });
 
       return;
@@ -62,15 +74,25 @@ async function analyse(id: string, frame: Buffer, at: number, questions: Record<
     // last one stored must not undo it.
     if (at <= (current?.analyzed ?? 0)) return;
 
-    const next = {
-      state: settle(current?.state ?? {}, probabilities, at),
-      seen: Math.max(at, current?.seen ?? 0),
-      analyzed: at,
-      at,
-    };
+    // Read again rather than taken from the request, because a question can
+    // be deleted or an alert fire while the model is answering.
+    const asked = pending(current);
+    const state = settle(current, asked, probabilities, at);
+    const fired = asked.filter(({ key, alert, hold }) => alert && state[key]?.yes && at - state[key].since >= hold);
+    const next = { state, seen: Math.max(at, current?.seen ?? 0), analyzed: at, at };
+    const pipeline = redis.pipeline().hset(`device:${id}`, next);
 
-    await redis.hset(`device:${id}`, next);
-    await realtime.channel(id).emit("board.snapshot", view(id, { ...current, ...next }));
+    // The mark is its own field, set once, so that a late answer writing an
+    // older state over this one cannot make the alert fire a second time.
+    for (const { key } of fired) pipeline.hsetnx(`device:${id}`, `done:${key}`, at);
+
+    await pipeline.exec();
+
+    if (fired.length > 0) watched.delete(id);
+
+    const marks = Object.fromEntries(fired.map(({ key }) => [`done:${key}`, at]));
+
+    await realtime.channel(id).emit("board.snapshot", view(id, { ...current, ...next, ...marks }));
   } catch (error) {
     console.error("analyse failed", id, error);
   }
@@ -89,19 +111,19 @@ export async function POST(request: Request) {
 
   const frame = Buffer.from(await request.arrayBuffer());
   const now = Date.now();
-  const questions = await lookup(id, now);
+  const rules = await lookup(id, now);
 
   // Nobody has the board's page open, or the board has no picture to send:
   // note the contact and analyse nothing.
-  if (!questions || frame.length === 0) {
+  if (!rules || frame.length === 0) {
     await redis.hset(`device:${id}`, { seen: now });
 
-    return Response.json({ watching: questions !== null, interval: questions ? BLIND_INTERVAL : undefined });
+    return Response.json({ watching: rules !== null, interval: rules ? BLIND_INTERVAL : undefined });
   }
 
   // The board is answered at once, so that it can send its next frame, and
   // the frame is analysed after the reply.
-  after(() => analyse(id, frame, now, questions));
+  after(() => analyse(id, frame, now, rules));
 
   return Response.json({ watching: true, interval: FRAME_INTERVAL });
 }

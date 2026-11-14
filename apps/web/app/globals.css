@@ -1,26 +1,150 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* One theme, dark: the glyph field is drawn for a terminal. */
+@theme {
+  --color-background: #0a0a0b;
+  --color-surface: #111113;
+  --color-raised: #1a1a1d;
+  --color-line: #26262b;
+
+  --color-foreground: #ededef;
+  --color-muted: #a1a1aa;
+  --color-faint: #7c7c86;
+
+  --color-yes: #4ade80;
+  --color-alert: #f5a524;
+  --color-danger: #f87171;
+
+  --animate-hold: hold linear both;
+  --animate-fire: fire 0.75s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  --animate-flash: flash 0.75s ease-out both;
+  --animate-drain: drain 0.75s ease-in both;
+  --animate-settle: settle 0.5s ease-out both;
+  --animate-blink: blink 1.1s steps(1) infinite;
+  --animate-beacon: beacon 2.4s ease-in-out infinite;
+
+  /* The duration and the delay come from the card: how long the alert has to
+     hold, and how far along it already was. */
+  @keyframes hold {
+    from {
+      transform: scaleX(0);
+    }
+
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  @keyframes fire {
+    0% {
+      transform: translateX(0) rotate(0);
+      box-shadow: 0 0 0 2px var(--color-alert), 0 0 48px -4px var(--color-alert);
+    }
+
+    8% {
+      transform: translateX(-14px) rotate(-1.2deg);
+    }
+
+    20% {
+      transform: translateX(13px) rotate(1.1deg);
+    }
+
+    32% {
+      transform: translateX(-11px) rotate(-0.8deg);
+    }
+
+    44% {
+      transform: translateX(9px) rotate(0.6deg);
+    }
+
+    56% {
+      transform: translateX(-6px) rotate(-0.4deg);
+    }
+
+    68% {
+      transform: translateX(4px) rotate(0.2deg);
+    }
+
+    80% {
+      transform: translateX(-2px) rotate(0);
+    }
+
+    90% {
+      transform: translateX(1px);
+    }
+
+    100% {
+      transform: translateX(0);
+      box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent;
+    }
+  }
+
+  @keyframes flash {
+    from {
+      opacity: 0.85;
+    }
+
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes drain {
+    0%,
+    50% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes settle {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes beacon {
+    50% {
+      opacity: 0.35;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-foreground);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-alert) 35%, transparent);
+  }
 }
