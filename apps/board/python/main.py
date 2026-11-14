@@ -23,6 +23,9 @@ HEADERS = {
 # A still image stands in for the camera on a bench without one.
 STILL = os.environ.get("STILL")
 
+# Seconds between check-ins until the server says otherwise.
+IDLE = 3.0
+
 session = requests.Session()
 camera = None
 watching = False
@@ -66,7 +69,8 @@ def loop():
     global watching, failures
 
     started = time.monotonic()
-    interval = 3.0
+    interval = IDLE
+    blind = False
     failed = False
 
     try:
@@ -78,7 +82,7 @@ def loop():
             except Exception as error:
                 print(f"camera: {error}", flush=True)
                 release()
-                failed = True
+                blind = True
         else:
             release()
 
@@ -86,17 +90,21 @@ def loop():
         reply = response.json()
 
         watching = bool(reply.get("watching"))
-        interval = reply.get("interval", 3000) / 1000
-        failed = failed or not response.ok
+        interval = reply.get("interval", IDLE * 1000) / 1000
+        failed = not response.ok
     except Exception as error:
         print(f"server: {error}", flush=True)
         failed = True
 
     failures = failures + 1 if failed else 0
 
-    # Anything that went wrong slows the loop down, up to half a minute.
+    # A board that cannot see still checks in, so it shows as online.
+    if blind:
+        interval = max(interval, IDLE)
+
+    # A server that cannot be reached is tried less often, up to half a minute.
     if failures:
-        interval = min(max(interval, 1.0) * 2**failures, 30) + random.random()
+        interval = max(interval, min(2.0 ** min(failures, 5), 30)) + random.random()
 
     time.sleep(max(0.0, interval - (time.monotonic() - started)))
 
