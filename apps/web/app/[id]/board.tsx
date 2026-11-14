@@ -7,11 +7,12 @@ import { use, useEffect, useState } from "react";
 import type { Snapshot } from "@/lib/device";
 import { useRealtime } from "@/lib/realtime-client";
 
-// The beat keeps the board sending frames; it has to stay under the server's
-// watch lifetime. A contact is stored at most every 10 s and may be read a
-// beat later, so anything under the stale bound still counts as live.
-const BEAT = 10_000;
-const STALE = 30_000;
+// The beat keeps the board sending frames, so it has to stay well under the
+// server's watch lifetime. An idle board is heard from every 10 s, which the
+// stale bound has to cover, while a watched one answers four times a second.
+const BEAT = 4000;
+const STALE = 20_000;
+const FRESH = 5000;
 
 export function Board({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -61,7 +62,7 @@ function Live({ id }: { id: string }) {
   }, [id, status]);
 
   const online = snapshot !== null && now - snapshot.seen < STALE;
-  const fresh = snapshot !== null && now - snapshot.analyzed < STALE;
+  const fresh = snapshot !== null && now - snapshot.analyzed < FRESH;
 
   return (
     <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-8 px-6 py-16">
@@ -80,7 +81,7 @@ function Live({ id }: { id: string }) {
               : !online
                 ? `Board offline, last seen ${ago(now - snapshot.seen)} ago.`
                 : !fresh
-                  ? "Board online, waiting for its first fresh answer."
+                  ? "Board online, waiting for a fresh answer."
                   : "Board online, answering live."}{" "}
           {status === "connected" ? "" : "Reconnecting to the stream."}
         </p>
