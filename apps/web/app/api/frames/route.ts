@@ -1,7 +1,7 @@
 import { after } from "next/server";
 
 import { decide } from "@/lib/decide";
-import { BLIND_INTERVAL, type Device, FRAME_INTERVAL, asked, authorized, settle, view } from "@/lib/device";
+import { BLIND_INTERVAL, type Device, FRAME_INTERVAL, WAIT, asked, authorized, settle, view } from "@/lib/device";
 import type { Question } from "@/lib/questions";
 import { realtime } from "@/lib/realtime";
 import { redis } from "@/lib/redis";
@@ -43,7 +43,19 @@ async function lookup(id: string, now: number) {
 
 async function analyse(id: string, frame: Buffer, at: number, questions: Record<string, Question>) {
   try {
-    const probabilities = await decide(frame, questions, DEADLINE);
+    let probabilities: Record<string, number>;
+
+    try {
+      probabilities = await decide(frame, questions, DEADLINE);
+    } catch (error) {
+      console.error("decide failed", id, error);
+
+      // The board did reach us, so it stays online while its answers go stale.
+      await redis.hset(`device:${id}`, { seen: at });
+
+      return;
+    }
+
     const current = await redis.hgetall<Device>(`device:${id}`);
 
     // Answers come back out of order, and one for an older frame than the
@@ -92,4 +104,62 @@ export async function POST(request: Request) {
   after(() => analyse(id, frame, now, questions));
 
   return Response.json({ watching: true, interval: FRAME_INTERVAL });
+}
+
+// An idle board asks whether anyone is watching, and the question is held
+// open until someone is or the wait runs out, so that it wakes at once.
+export async function GET(request: Request) {
+  const id = request.headers.get("x-device-id") ?? "";
+
+  if (!authorized(id, request.headers.get("authorization"))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const subscriber = redis.subscribe<number>(`wake:${id}`);
+  const timers: NodeJS.Timeout[] = [];
+  const within = (ms: number) => new Promise<false>((resolve) => timers.push(setTimeout(() => resolve(false), ms)));
+
+  const woken = new Promise<true>((resolve) => subscriber.on("message", () => resolve(true)));
+  const listening = new Promise<true>((resolve) => subscriber.on("subscribe", () => resolve(true)));
+
+  const broken = new Promise<false>((resolve) =>
+    subscriber.on("error", (error) => {
+      console.error("wake failed", id, error);
+      resolve(false);
+    }),
+  );
+
+  const gone = new Promise<false>((resolve) => {
+    if (request.signal.aborted) resolve(false);
+
+    request.signal.addEventListener("abort", () => resolve(false));
+  });
+
+  const answer = async () => {
+    await redis.hset(`device:${id}`, { seen: Date.now() });
+
+    // Listening starts before looking, or a viewer arriving in between the
+    // two would be missed.
+    const ready = await Promise.race([listening, broken, within(2000)]);
+
+    if (await redis.exists(`watch:${id}`)) return true;
+
+    // Without a subscription a wake would go unheard, so the board is told to
+    // ask again rather than kept waiting for it.
+    return ready && Promise.race([woken, broken, within(WAIT * 1000)]);
+  };
+
+  try {
+    const answering = answer();
+
+    // The answer may still fail after the race is lost, with nobody listening.
+    answering.catch(() => {});
+
+    // Whatever Redis does, the question outlives neither the board that asked
+    // it nor the board's patience, and the subscription is always closed.
+    return Response.json({ watching: await Promise.race([answering, gone, within((WAIT + 5) * 1000)]) });
+  } finally {
+    timers.forEach(clearTimeout);
+    await subscriber.unsubscribe();
+  }
 }

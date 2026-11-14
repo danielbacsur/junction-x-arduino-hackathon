@@ -10,6 +10,9 @@ export const FRAME_INTERVAL = 250;
 // A watched board with no picture to send checks in this often instead.
 export const BLIND_INTERVAL = 1000;
 
+// Seconds an idle board's question whether anyone is watching is held open.
+export const WAIT = 10;
+
 // A viewer counts as present for this many seconds after its last beat.
 export const WATCH_TTL = 10;
 

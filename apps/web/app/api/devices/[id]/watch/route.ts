@@ -8,11 +8,14 @@ export async function POST(_request: Request, { params }: RouteContext<"/api/dev
 
   if (!identity.test(id)) return Response.json({ error: "invalid identity" }, { status: 400 });
 
-  const [, device] = await redis
+  const [before, device] = await redis
     .pipeline()
-    .set(`watch:${id}`, 1, { ex: WATCH_TTL })
+    .set(`watch:${id}`, 1, { ex: WATCH_TTL, get: true })
     .hgetall<Device>(`device:${id}`)
-    .exec<[string, Device | null]>();
+    .exec<[number | null, Device | null]>();
+
+  // An idle board is holding a question open for exactly this moment.
+  if (before === null) await redis.publish(`wake:${id}`, 1);
 
   return Response.json(view(id, device));
 }
