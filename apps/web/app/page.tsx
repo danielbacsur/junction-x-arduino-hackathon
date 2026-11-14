@@ -7,7 +7,7 @@ export default function Page() {
         <h1 className="text-3xl font-semibold tracking-tight">Arduino</h1>
 
         <p className="text-zinc-600 dark:text-zinc-400">
-          Type the serial of a board to see what its camera answers right now.
+          Type the MAC printed on a board to see what its camera answers right now.
         </p>
       </div>
 

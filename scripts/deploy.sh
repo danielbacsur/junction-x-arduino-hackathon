@@ -1,12 +1,15 @@
 #!/bin/sh
 # Copies the app to the board over adb, writes its settings and restarts it.
-# The token is derived from the board's serial, so each board gets its own.
+# The board is known by the MAC printed on its Wi-Fi module, and its token is
+# derived from that, so each board gets its own.
 set -eu
 cd "$(dirname "$0")/.."
 . ./.env
 
-id=$(adb shell cat /sys/devices/soc0/serial_number | tr -d '\r\n')
-[ -n "$id" ] || { echo "No board answered over adb." >&2; exit 1; }
+# The radio's own address is read, because the interface shows a random one
+# while it scans.
+id=$(adb shell cat /sys/class/net/wlan0/phy80211/macaddress | tr -d ':\r\n' | tr a-f A-F)
+printf '%s' "$id" | grep -Eqx '[0-9A-F]{12}' || { echo "No board answered over adb." >&2; exit 1; }
 token=$(printf '%s' "$id" | openssl dgst -sha256 -hmac "$DEVICE_SECRET" -hex | awk '{print $NF}')
 app=/home/arduino/ArduinoApps/board
 

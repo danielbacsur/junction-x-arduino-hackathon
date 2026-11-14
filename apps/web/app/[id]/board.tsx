@@ -120,7 +120,7 @@ function Live({ id }: { id: string }) {
         })}
       </ul>
 
-      <p className="text-sm text-zinc-500">Anyone who knows this serial can open this page.</p>
+      <p className="text-sm text-zinc-500">Anyone who knows this board&apos;s MAC can open this page.</p>
     </main>
   );
 }
