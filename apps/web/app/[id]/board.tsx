@@ -8,9 +8,10 @@ import type { Snapshot } from "@/lib/device";
 import { useRealtime } from "@/lib/realtime-client";
 
 // The beat keeps the board sending frames; it has to stay under the server's
-// watch lifetime. Anything older than the stale bound is no longer live.
+// watch lifetime. A contact is stored at most every 10 s and may be read a
+// beat later, so anything under the stale bound still counts as live.
 const BEAT = 10_000;
-const STALE = 15_000;
+const STALE = 30_000;
 
 export function Board({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -31,6 +32,14 @@ function Live({ id }: { id: string }) {
     setSnapshot((current) => (current && current.at > next.at ? current : next));
   };
 
+  const { status } = useRealtime({
+    channels: [id],
+    events: ["board.snapshot"],
+    onData: ({ data }) => keep(data),
+  });
+
+  // Runs again whenever the stream reconnects, which reloads the snapshot and
+  // so repairs anything published while it was down.
   useEffect(() => {
     const beat = async () => {
       if (document.visibilityState !== "visible") return;
@@ -49,13 +58,7 @@ function Live({ id }: { id: string }) {
       timers.forEach(clearInterval);
       document.removeEventListener("visibilitychange", beat);
     };
-  }, [id]);
-
-  const { status } = useRealtime({
-    channels: [id],
-    events: ["board.snapshot"],
-    onData: ({ data }) => keep(data),
-  });
+  }, [id, status]);
 
   const online = snapshot !== null && now - snapshot.seen < STALE;
   const fresh = snapshot !== null && now - snapshot.analyzed < STALE;

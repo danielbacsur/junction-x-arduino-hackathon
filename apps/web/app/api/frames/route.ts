@@ -14,7 +14,13 @@ import { realtime } from "@/lib/realtime";
 import { redis } from "@/lib/redis";
 
 const DEADLINE = 3000;
+const LOCK = DEADLINE + 1000;
 const LIMIT = 1_000_000;
+
+// Records a contact that produced no answers, at most once per heartbeat.
+async function touch(id: string, device: Device | null, now: number) {
+  if (now - (device?.seen ?? 0) >= HEARTBEAT) await redis.hset(`device:${id}`, { seen: now });
+}
 
 export async function POST(request: Request) {
   const id = request.headers.get("x-device-id") ?? "";
@@ -39,7 +45,7 @@ export async function POST(request: Request) {
   // Nobody has the board's page open, or the board only checked in: note the
   // contact and tell it whether to start sending frames.
   if (!watched || frame.length === 0) {
-    if (now - (device?.seen ?? 0) >= HEARTBEAT) await redis.hset(`device:${id}`, { seen: now });
+    await touch(id, device, now);
 
     return Response.json({ watching: Boolean(watched), interval: watched ? 0 : IDLE_INTERVAL });
   }
@@ -48,23 +54,26 @@ export async function POST(request: Request) {
 
   // The lock is held while the frame is in flight, so a late answer can never
   // overwrite a newer one, and is then left to expire at the frame spacing.
-  const [admitted, calls] = await redis
-    .pipeline()
-    .set(`admit:${id}`, now, { nx: true, px: DEADLINE + 1000 })
-    .incr(`calls:${day}`)
-    .exec<[string | null, number]>();
+  const admitted = await redis.set(`admit:${id}`, now, { nx: true, px: LOCK });
 
   if (!admitted) {
     return Response.json({ watching: true, interval: FRAME_INTERVAL }, { status: 429 });
   }
 
-  if (calls === 1) await redis.expire(`calls:${day}`, 172_800);
+  const late = () => Date.now() - now > LOCK - 500;
 
-  const release = () => {
+  const release = async () => {
     const rest = FRAME_INTERVAL - 100 - (Date.now() - now);
 
-    return rest > 0 ? redis.pexpire(`admit:${id}`, rest) : redis.del(`admit:${id}`);
+    // Work that outlived the lock no longer owns it.
+    if (late()) return;
+
+    await (rest > 0 ? redis.pexpire(`admit:${id}`, rest) : redis.del(`admit:${id}`));
   };
+
+  const calls = await redis.incr(`calls:${day}`);
+
+  if (calls === 1) await redis.expire(`calls:${day}`, 172_800);
 
   if (calls > DAILY_BUDGET) {
     await release();
@@ -72,29 +81,46 @@ export async function POST(request: Request) {
     return Response.json({ watching: true, interval: 60_000, error: "budget" }, { status: 429 });
   }
 
-  let probabilities: Record<string, number>;
-
   try {
-    probabilities = await decide(frame, asked(device), DEADLINE);
-  } catch (error) {
-    console.error("decide failed", id, error);
+    // Read again now that the lock is held: only this copy is certain to
+    // include the answers of the frame before.
+    const current = await redis.hgetall<Device>(`device:${id}`);
+
+    let probabilities: Record<string, number>;
+
+    try {
+      probabilities = await decide(frame, asked(current), DEADLINE);
+    } catch (error) {
+      console.error("decide failed", id, error);
+
+      // The board did reach us, so it stays online while the answers go stale.
+      await touch(id, current, now);
+
+      return Response.json({ watching: true, interval: FRAME_INTERVAL, error: "decide" }, { status: 502 });
+    }
+
+    // A newer frame may already have been admitted, and its answer must win.
+    if (late()) {
+      return Response.json({ watching: true, interval: FRAME_INTERVAL, error: "late" }, { status: 504 });
+    }
+
+    const { state, changed } = settle(current?.state ?? {}, probabilities, now);
+
+    if (changed || now - (current?.at ?? 0) >= HEARTBEAT) {
+      const next = { state, seen: now, analyzed: now, at: now };
+
+      await redis.hset(`device:${id}`, next);
+
+      // The stored state is the truth. A publish that fails is repaired by
+      // the page's next beat, which reads it back.
+      await realtime
+        .channel(id)
+        .emit("board.snapshot", view(id, { ...current, ...next }))
+        .catch((error) => console.error("emit failed", id, error));
+    }
+
+    return Response.json({ watching: true, interval: FRAME_INTERVAL, state });
+  } finally {
     await release();
-
-    return Response.json({ watching: true, interval: FRAME_INTERVAL, error: "decide" }, { status: 502 });
   }
-
-  const { state, changed } = settle(device?.state ?? {}, probabilities, now);
-
-  if (changed || now - (device?.at ?? 0) >= HEARTBEAT) {
-    const next = { state, seen: now, analyzed: now, at: now };
-
-    await Promise.all([
-      redis.hset(`device:${id}`, next),
-      realtime.channel(id).emit("board.snapshot", view(id, { ...device, ...next })),
-    ]);
-  }
-
-  await release();
-
-  return Response.json({ watching: true, interval: FRAME_INTERVAL, state });
 }
