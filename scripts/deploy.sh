@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 . ./.env
 
 id=$(adb shell cat /sys/devices/soc0/serial_number | tr -d '\r\n')
+[ -n "$id" ] || { echo "No board answered over adb." >&2; exit 1; }
 token=$(printf '%s' "$id" | openssl dgst -sha256 -hmac "$DEVICE_SECRET" -hex | awk '{print $NF}')
 app=/home/arduino/ArduinoApps/board
 

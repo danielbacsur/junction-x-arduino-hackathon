@@ -4,6 +4,7 @@
 Description=Board camera app
 After=arduino-app-cli.service docker.service arduino-router.service
 Wants=docker.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
