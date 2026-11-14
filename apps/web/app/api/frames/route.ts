@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       console.error("decide failed", id, error);
 
       // The board did reach us, so it stays online while the answers go stale.
-      await touch(id, current, now);
+      if (!late()) await touch(id, current, now);
 
       return Response.json({ watching: true, interval: FRAME_INTERVAL, error: "decide" }, { status: 502 });
     }
