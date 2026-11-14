@@ -5,6 +5,7 @@ import {
   BLIND_INTERVAL,
   type Device,
   FRAME_INTERVAL,
+  PREVIEW_INTERVAL,
   type Rule,
   WAIT,
   authorized,
@@ -22,6 +23,9 @@ const LIMIT = 1_000_000;
 // far less often, so an instance looks that up once a second for each board.
 const MEMORY = 1000;
 const watched = new Map<string, { until: number; rules: Rule[] }>();
+
+// When each board's picture was last kept for the preview on its page.
+const kept = new Map<string, number>();
 
 // Tells whether anyone has the board's page open, and if so what to ask.
 async function lookup(id: string, now: number) {
@@ -48,6 +52,19 @@ async function lookup(id: string, now: number) {
   watched.set(id, { until: now + MEMORY, rules });
 
   return rules;
+}
+
+// The page shows about one picture a second, so the rest are only answered.
+async function keep(id: string, frame: Buffer, now: number) {
+  if (now - (kept.get(id) ?? 0) < PREVIEW_INTERVAL - 100) return;
+
+  kept.set(id, now);
+
+  try {
+    await redis.set(`frame:${id}`, frame.toString("base64"), { ex: 10 });
+  } catch (error) {
+    console.error("keep failed", id, error);
+  }
 }
 
 async function analyse(id: string, frame: Buffer, at: number, rules: Rule[]) {
@@ -122,10 +139,11 @@ export async function POST(request: Request) {
   }
 
   // The board is answered at once, so that it can send its next frame, and
-  // the frame is analysed after the reply.
-  after(() => analyse(id, frame, now, rules));
+  // the frame is kept and analysed after the reply.
+  after(() => Promise.all([keep(id, frame, now), analyse(id, frame, now, rules)]));
 
-  return Response.json({ watching: true, interval: FRAME_INTERVAL });
+  // With nothing to ask, the pictures only feed the preview.
+  return Response.json({ watching: true, interval: rules.length > 0 ? FRAME_INTERVAL : PREVIEW_INTERVAL });
 }
 
 // An idle board asks whether anyone is watching, and the question is held

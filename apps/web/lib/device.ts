@@ -10,6 +10,10 @@ export const FRAME_INTERVAL = 250;
 // A watched board with no picture to send checks in this often instead.
 export const BLIND_INTERVAL = 1000;
 
+// With nothing to ask, a watched board only feeds the preview on its page, and
+// about one picture a second is kept for it in any case.
+export const PREVIEW_INTERVAL = 1000;
+
 // Seconds an idle board's question whether anyone is watching is held open.
 export const WAIT = 10;
 

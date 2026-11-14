@@ -148,3 +148,8 @@
     background: color-mix(in srgb, var(--color-alert) 35%, transparent);
   }
 }
+
+/* The demo holds a scene still by stopping the clock its loader reads. */
+[data-frozen] .animate-hold {
+  animation-play-state: paused;
+}
