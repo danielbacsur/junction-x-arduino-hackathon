@@ -1,0 +1,12 @@
+#!/bin/sh
+# Docker gives a container the DNS servers the board had when the container
+# started, so a board that boots on a different network than last time could
+# never resolve the server. NetworkManager runs this on every network event,
+# and the app is started again whenever the servers have changed.
+servers=$(grep '^nameserver' /etc/resolv.conf)
+
+[ -n "$servers" ] || exit 0
+[ "$servers" != "$(cat /run/board.dns 2>/dev/null)" ] || exit 0
+
+echo "$servers" > /run/board.dns
+systemctl --no-block restart board.service

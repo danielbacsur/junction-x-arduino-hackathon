@@ -36,4 +36,7 @@ adb push scripts/board.service /tmp/board.service
 root "install -m 644 /tmp/board.service /etc/systemd/system/board.service"
 root "systemctl enable board.service"
 
+adb push scripts/board.dispatcher /tmp/board.dispatcher
+root "install -m 755 /tmp/board.dispatcher /etc/NetworkManager/dispatcher.d/50-board"
+
 echo "Board $(adb shell cat /sys/devices/soc0/serial_number) is provisioned. Reboot it to apply the Wi-Fi region."
