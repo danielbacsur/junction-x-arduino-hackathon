@@ -11,7 +11,9 @@ export const realtime = new Realtime({
   schema,
   redis,
 
-  history: { maxLength: 50, expireAfterSecs: 3600 },
+  // Fifty snapshots are a few kilobytes for each board, and letting them lie
+  // spares an EXPIRE with every one of the four snapshots a second.
+  history: { maxLength: 50 },
 });
 
 export type RealtimeEvents = InferRealtimeEvents<typeof realtime>;
