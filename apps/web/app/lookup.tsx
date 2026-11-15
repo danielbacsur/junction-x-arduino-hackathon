@@ -34,7 +34,7 @@ export function Lookup() {
       />
 
       <button className="h-9 rounded-lg bg-foreground px-4 text-sm font-medium text-background" type="submit">
-        Watch
+        Open board
       </button>
     </form>
   );

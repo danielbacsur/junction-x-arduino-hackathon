@@ -2,25 +2,22 @@
   "name": "@arduino/app-web",
   "version": "0.0.0",
   "private": true,
-
   "scripts": {
     "build": "next build",
     "dev": "next dev --port 3000",
     "lint": "eslint",
     "start": "next start --port 3000",
-    "typecheck": "next typegen && tsc"
+    "typecheck": "next typegen && tsc",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
-
   "dependencies": {
-    "@upstash/realtime": "1.1.1",
     "@upstash/redis": "1.41.0",
-    "ai": "7.0.173",
     "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@google/genai": "^1"
   },
-
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
@@ -31,5 +28,6 @@
     "eslint-config-next": "^16",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "type": "module"
 }

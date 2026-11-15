@@ -10,12 +10,12 @@ export default function Page() {
       />
 
       <div className="flex max-w-sm flex-col gap-3 text-center">
-        <p className="font-mono text-xs tracking-widest text-faint uppercase">UNO Q camera</p>
+        <p className="font-mono text-xs tracking-widest text-faint uppercase">Local intelligence · UNO Q</p>
 
-        <h1 className="text-3xl font-semibold tracking-tight">Arduino</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">GreenView</h1>
 
         <p className="text-muted">
-          Type the MAC printed on a board to ask its camera questions and watch the answers live.
+          Notice waste. Keep pictures and live answers at home. Open your board to manage rules and see delivered alerts.
         </p>
       </div>
 

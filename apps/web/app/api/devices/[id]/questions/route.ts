@@ -1,88 +1,45 @@
 import { randomUUID } from "node:crypto";
-
 import { compile } from "@/lib/compile";
-import { type Device, QUESTIONS, type Rule, asked, identity, view } from "@/lib/device";
-import { realtime } from "@/lib/realtime";
-import { redis } from "@/lib/redis";
+import { authorized, identity, QUESTIONS } from "@/lib/device";
+import { edit, notificationUrl, snapshot } from "@/lib/store";
 
-const LENGTH = 200;
-
-function refuse(error: string, status: number) {
-  return Response.json({ error }, { status });
-}
-
-// Stores the list and sends every open page the snapshot the caller gets back.
-// The keys in `forgotten` are gone, so the marks of their alerts go with them.
-async function publish(id: string, device: Device | null, questions: Rule[], forgotten: string[]) {
-  const edited = Date.now();
-  const pipeline = redis.pipeline().hset(`device:${id}`, { questions, edited });
-
-  if (forgotten.length > 0) pipeline.hdel(`device:${id}`, ...forgotten.map((key) => `done:${key}`));
-
-  await pipeline.exec();
-
-  const next = view(id, { ...device, questions, edited });
-
-  await realtime.channel(id).emit("board.snapshot", next);
-
-  return Response.json(next);
-}
-
-// Knowing the board's MAC is all it takes to change what it is asked, the
-// same as it is all it takes to watch it.
-export async function POST(request: Request, { params }: RouteContext<"/api/devices/[id]/questions">) {
+type Context = RouteContext<"/api/devices/[id]/questions">;
+export async function GET(request: Request, { params }: Context) {
   const { id } = await params;
-
-  if (!identity.test(id)) return refuse("invalid identity", 400);
-
+  if (!identity.test(id)) return Response.json({ error: "invalid identity" }, { status: 400 });
+  const view = await snapshot(id);
+  const owner = authorized(id, request.headers.get("authorization"), "owner:");
+  return Response.json({ ...view, owner, ...(owner ? { notifications: notificationUrl(id) } : {}) }, { headers: { "Cache-Control": "no-store" } });
+}
+export async function POST(request: Request, { params }: Context) {
+  const { id } = await params;
+  if (!authorized(id, request.headers.get("authorization"), "owner:")) return Response.json({ error: "Owner link required." }, { status: 403 });
   const body = await request.json().catch(() => null);
-
-  // A finished alert runs again under a new key, so the mark and the answers
-  // of the old run cannot be taken for the new one's.
-  if (typeof body?.again === "string") {
-    const device = await redis.hgetall<Device>(`device:${id}`);
-
-    const questions = asked(device).map((rule) =>
-      rule.key === body.again ? { ...rule, key: randomUUID().slice(0, 8) } : rule,
-    );
-
-    return publish(id, device, questions, [body.again]);
-  }
-
-  const text = typeof body?.text === "string" ? body.text.trim() : "";
-
-  if (!text || text.length > LENGTH) return refuse(`Type a question of at most ${LENGTH} characters.`, 400);
-
-  let compiled: Awaited<ReturnType<typeof compile>>;
-
   try {
-    compiled = await compile(text);
+    if (typeof body?.again === "string") {
+      await edit(id, (config) => ({ ...config, questions: config.questions.map((rule) => rule.key === body.again ? { ...rule, key: randomUUID() } : rule) }));
+    } else if (typeof body?.heatedAbove === "number" && Number.isFinite(body.heatedAbove) && body.heatedAbove >= -40 && body.heatedAbove <= 85) {
+      // New keys also cancel pending deliveries that used the old temperature setting.
+      await edit(id, (config) => ({ ...config, heatedAbove: body.heatedAbove, questions: config.questions.map((rule) => rule.temperature?.heated ? { ...rule, key: randomUUID() } : rule) }));
+    } else {
+      const text = typeof body?.text === "string" ? body.text.trim() : "";
+      if (!text || text.length > 200) return Response.json({ error: "Type a rule of at most 200 characters." }, { status: 400 });
+      const compiled = await compile(text);
+      if (compiled.reason !== undefined) return Response.json({ error: compiled.reason }, { status: 422 });
+      await edit(id, (config) => {
+        if (config.questions.length >= QUESTIONS) throw new Error(`A board takes ${QUESTIONS} rules. Delete one first.`);
+        return { ...config, questions: [...config.questions, { key: randomUUID(), text, ...compiled }] };
+      });
+    }
+    return Response.json(await snapshot(id));
   } catch (error) {
-    console.error("compile failed", id, error);
-
-    return refuse("Could not work that out just now. Try again.", 502);
+    return Response.json({ error: error instanceof Error ? error.message : "Could not save the rule." }, { status: 502 });
   }
-
-  if (compiled.reason !== undefined) return refuse(compiled.reason, 422);
-
-  // Read only now: working the text out takes about a second, and a question
-  // deleted in the meantime must not come back.
-  const device = await redis.hgetall<Device>(`device:${id}`);
-  const questions = asked(device);
-
-  if (questions.length >= QUESTIONS) return refuse(`A board takes ${QUESTIONS} questions at most. Delete one first.`, 409);
-
-  return publish(id, device, [...questions, { key: randomUUID().slice(0, 8), text, ...compiled }], []);
 }
-
-export async function DELETE(request: Request, { params }: RouteContext<"/api/devices/[id]/questions">) {
+export async function DELETE(request: Request, { params }: Context) {
   const { id } = await params;
-
-  if (!identity.test(id)) return refuse("invalid identity", 400);
-
-  const key = new URL(request.url).searchParams.get("key") ?? "";
-  const device = await redis.hgetall<Device>(`device:${id}`);
-  const questions = asked(device).filter((rule) => rule.key !== key);
-
-  return publish(id, device, questions, [key]);
+  if (!authorized(id, request.headers.get("authorization"), "owner:")) return Response.json({ error: "Owner link required." }, { status: 403 });
+  const key = new URL(request.url).searchParams.get("key");
+  await edit(id, (config) => ({ ...config, questions: config.questions.filter((rule) => rule.key !== key) }));
+  return Response.json(await snapshot(id));
 }

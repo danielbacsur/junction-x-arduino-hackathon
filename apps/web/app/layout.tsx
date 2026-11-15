@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Arduino",
-  description: "Live answers from an Arduino UNO Q camera.",
+  title: "GreenView",
+  description: "Local eyes on everyday waste. Private monitoring with Arduino UNO Q.",
 };
 
 export const viewport: Viewport = {
