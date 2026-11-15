@@ -1,0 +1,10 @@
+# Run training on a BF16-capable NVIDIA GPU, not the UNO Q.
+torch>=2.7
+transformers>=5.10.1
+peft>=0.19.0
+trl>=1.6,<2
+accelerate>=1.10
+bitsandbytes>=0.47
+pillow>=11
+huggingface-hub>=0.34
+safetensors>=0.6
