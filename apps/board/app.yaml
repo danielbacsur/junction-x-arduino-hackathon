@@ -1,6 +1,5 @@
-name: board
-icon: 📷
-description: Posts camera frames to the server while someone is watching.
-
-ports: []
-bricks: []
+name: GreenView
+icon: 🌱
+description: Local camera rules, room temperature, and private waste alerts.
+bricks:
+  - arduino:web_ui

@@ -1,0 +1,4 @@
+# App Lab supplies arduino.app_* and the web_ui brick.
+litert-lm-api==0.19.2
+requests>=2.32,<3
+python-dotenv>=1.1,<2
