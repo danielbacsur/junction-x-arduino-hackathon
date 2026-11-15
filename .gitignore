@@ -3,3 +3,12 @@
 .turbo
 .vercel
 node_modules
+
+__pycache__/
+*.pyc
+.venv/
+apps/board/data/
+apps/board/models/
+training/output/
+training/exported/
+training/data/

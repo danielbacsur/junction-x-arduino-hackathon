@@ -13,7 +13,7 @@ printf '%s' "$id" | grep -Eqx '[0-9A-F]{12}' || { echo "No board answered over a
 token=$(printf '%s' "$id" | openssl dgst -sha256 -hmac "$DEVICE_SECRET" -hex | awk '{print $NF}')
 app=/home/arduino/ArduinoApps/board
 
-adb shell mkdir -p "$app"
+adb shell mkdir -p "$app/data" "$app/models"
 adb push apps/board/. "$app/"
 
 printf 'SERVER_URL=%s\nDEVICE_ID=%s\nDEVICE_TOKEN=%s\n' "$SERVER_URL" "$id" "$token" |
@@ -21,4 +21,6 @@ printf 'SERVER_URL=%s\nDEVICE_ID=%s\nDEVICE_TOKEN=%s\n' "$SERVER_URL" "$id" "$to
 
 adb shell arduino-app-cli app restart user:board
 
-echo "Board $id is deployed. Watch it at $SERVER_URL/$id"
+owner=$(printf 'owner:%s' "$id" | openssl dgst -sha256 -hmac "$DEVICE_SECRET" -hex | awk '{print $NF}')
+echo "Board $id is deployed. Keep this owner link secret: $SERVER_URL/$id#owner=$owner"
+echo "Live cards are available on the board LAN address, port 7000."
