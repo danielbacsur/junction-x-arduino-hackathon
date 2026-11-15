@@ -1,0 +1,14 @@
+{
+  "base_model": "google/gemma-4-E2B",
+  "instruction_processor": "google/gemma-4-E2B-it",
+  "stock_bundle": "litert-community/gemma-4-E2B-it-litert-lm",
+  "runtime": "litert-lm-api",
+  "backend": "CPU",
+  "max_vision_tokens_per_image": 70,
+  "context_tokens": 1024,
+  "training_completed": false,
+  "training_run": null,
+  "export_sha256": null,
+  "measured_uno_q_peak_rss_bytes": null,
+  "measured_uno_q_answers_per_second": null
+}
